@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, FileText, AlertCircle, TrendingUp } from 'lucide-vue-next'
 

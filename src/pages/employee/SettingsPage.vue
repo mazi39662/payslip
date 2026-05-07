@@ -3,9 +3,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { 
-  Settings, 
   Globe, 
-  ChevronRight,
   ArrowLeft
 } from 'lucide-vue-next'
 import { useRouter } from 'vue-router'

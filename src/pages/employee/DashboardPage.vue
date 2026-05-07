@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -13,8 +12,7 @@ import {
   TrendingUp, 
   Calendar, 
   Bell, 
-  ChevronRight,
-  ArrowUpRight
+  ChevronRight
 } from 'lucide-vue-next'
 
 const authStore = useAuthStore()
