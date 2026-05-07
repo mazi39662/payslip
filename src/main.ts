@@ -7,7 +7,7 @@ import './assets/index.css'
 const app = createApp(App)
 
 // Global error handler for catching runtime errors
-app.config.errorHandler = (err, vm, info) => {
+app.config.errorHandler = (err, _vm, info) => {
   console.error('Vue Global Error:', err)
   console.error('Info:', info)
 }
