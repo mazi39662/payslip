@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
@@ -14,11 +15,15 @@ import {
   Bell, 
   ChevronRight
 } from 'lucide-vue-next'
+import { supabase } from '@/utils/supabase'
 
 const authStore = useAuthStore()
 const settingsStore = useSettingsStore()
 const router = useRouter()
 
+const isLoading = ref(false) // Start false to show cache if it exists
+const rawPayslips = ref<any[]>([])
+const CACHE_KEY = computed(() => `payslips_cache_${authStore.user?.id}`)
 
 const formatAmount = (amount: number) => {
   if (!settingsStore.isAmountVisible) return '••••••'
@@ -28,23 +33,104 @@ const formatAmount = (amount: number) => {
   }).format(amount)
 }
 
-// Mock data for the chart
-const salaryData = [
-  { month: 'Jan', amount: 3800 },
-  { month: 'Feb', amount: 4100 },
-  { month: 'Mar', amount: 3950 },
-  { month: 'Apr', amount: 4250 },
-  { month: 'May', amount: 4250 },
-  { month: 'Jun', amount: 4400 },
-  { month: 'Jul', amount: 4400 },
-  { month: 'Aug', amount: 4600 },
-  { month: 'Sep', amount: 4600 },
-  { month: 'Oct', amount: 4800 },
-  { month: 'Nov', amount: 4800 },
-  { month: 'Dec', amount: 5000 },
-]
+const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const currentYear = new Date().getFullYear()
 
-const maxAmount = Math.max(...salaryData.map(d => d.amount))
+// Load cache immediately
+function loadCache() {
+  if (!authStore.user) return
+  const cached = localStorage.getItem(CACHE_KEY.value)
+  if (cached) {
+    try {
+      rawPayslips.value = JSON.parse(cached)
+      console.log('Cache loaded for user:', authStore.user.id)
+    } catch (e) {
+      console.error('Error parsing cache:', e)
+    }
+  }
+}
+
+async function fetchAnalyticsData() {
+  console.log('fetchAnalyticsData called, user:', authStore.user?.id)
+  if (!authStore.user) {
+    isLoading.value = false
+    return
+  }
+  
+  isLoading.value = true
+
+  try {
+    console.log('Fetching fresh analytics from Supabase...')
+    const { data, error } = await supabase
+      .from('payslips')
+      .select('month, year, net_salary')
+      .eq('employee_id', authStore.user.id)
+      .order('year', { ascending: true })
+      .order('month', { ascending: true })
+
+    if (error) {
+      console.error('Supabase Query Error:', error)
+      throw error
+    }
+    
+    console.log('Fresh analytics data received, count:', data?.length || 0)
+    rawPayslips.value = data || []
+    
+    // Update cache
+    localStorage.setItem(CACHE_KEY.value, JSON.stringify(rawPayslips.value))
+  } catch (error) {
+    console.error('Error fetching analytics:', error)
+  } finally {
+    isLoading.value = false
+    console.log('Analytics background fetch completed')
+  }
+}
+
+watch(() => authStore.user, (newUser) => {
+  console.log('Auth user watcher triggered:', newUser?.id)
+  if (newUser) {
+    loadCache()
+    fetchAnalyticsData()
+  } else {
+    rawPayslips.value = []
+    isLoading.value = false
+  }
+}, { immediate: true })
+
+const salaryData = computed(() => {
+  const data = months.map((month, index) => {
+    const monthNum = index + 1
+    // Filter by both month and current year
+    const payslip = rawPayslips.value.find(p => p.month === monthNum && p.year === currentYear)
+    return {
+      month,
+      amount: payslip ? Number(payslip.net_salary) : 0
+    }
+  })
+  return data
+})
+
+const maxAmount = computed(() => {
+  const max = Math.max(...salaryData.value.map(d => d.amount))
+  return max > 0 ? max : 1000 // Fallback to avoid division by zero
+})
+
+const averageMonthly = computed(() => {
+  const paidMonths = salaryData.value.filter(d => d.amount > 0)
+  if (paidMonths.length === 0) return 0
+  const total = paidMonths.reduce((sum, d) => sum + d.amount, 0)
+  return total / paidMonths.length
+})
+
+const yearToDate = computed(() => {
+  return salaryData.value.reduce((sum, d) => sum + d.amount, 0)
+})
+
+const projection = computed(() => {
+  const paidMonths = salaryData.value.filter(d => d.amount > 0).length
+  if (paidMonths === 0) return 0
+  return (yearToDate.value / paidMonths) * 12
+})
 
 const newsItems = [
   {
@@ -104,6 +190,10 @@ const newsItems = [
             <CardTitle class="text-xl font-bold text-white flex items-center gap-2">
               <TrendingUp class="w-5 h-5 text-blue-400" />
               Salary Analytics
+              <div v-if="isLoading && rawPayslips.length > 0" class="flex items-center gap-2 ml-2">
+                <div class="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></div>
+                <span class="text-[10px] text-slate-500 font-medium uppercase tracking-widest animate-pulse">Updating...</span>
+              </div>
             </CardTitle>
             <CardDescription class="text-slate-500">Earnings performance throughout the year</CardDescription>
           </div>
@@ -117,52 +207,65 @@ const newsItems = [
           </Button>
         </CardHeader>
         
-        <CardContent class="pt-8 flex-1 flex flex-col">
-          <!-- Salary Summary -->
-          <div class="grid grid-cols-2 sm:grid-cols-3 gap-8 mb-8">
-            <div class="space-y-1">
-              <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Average Monthly</p>
-              <p class="text-2xl font-black text-white">{{ formatAmount(4350) }}</p>
-            </div>
-            <div class="space-y-1">
-              <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Year to Date</p>
-              <p class="text-2xl font-black text-blue-400">{{ formatAmount(53100) }}</p>
-            </div>
-            <div class="hidden sm:block space-y-1">
-              <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Projection</p>
-              <p class="text-2xl font-black text-indigo-400">{{ formatAmount(65000) }}</p>
-            </div>
+        <CardContent class="pt-8 flex-1 flex flex-col min-h-[350px]">
+          <!-- Full card loading only if no data at all -->
+          <div v-if="isLoading && rawPayslips.length === 0" class="flex-1 flex flex-col items-center justify-center space-y-4">
+            <div class="w-12 h-12 border-4 border-blue-500/30 border-t-blue-500 rounded-full animate-spin"></div>
+            <p class="text-slate-500 font-medium">Analyzing your salary data...</p>
           </div>
 
-          <!-- Simple SVG Chart -->
-          <div class="h-64 w-full mt-auto relative group">
-            <div class="absolute inset-0 flex items-end justify-between px-2 gap-1 sm:gap-2">
-              <div 
-                v-for="(item, index) in salaryData" 
-                :key="index"
-                class="relative flex-1 group/bar"
-                :style="{ height: `${(item.amount / maxAmount) * 100}%` }"
-              >
-                <div 
-                  class="w-full h-full bg-gradient-to-t from-blue-600/20 to-blue-500/60 rounded-t-sm sm:rounded-t-md transition-all duration-500 group-hover/bar:to-blue-400 group-hover/bar:shadow-[0_0_20px_rgba(59,130,246,0.5)]"
-                ></div>
-                <!-- Tooltip -->
-                <div class="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none border border-slate-700 shadow-xl">
-                  {{ item.month }}: {{ formatAmount(item.amount) }}
-                </div>
+          <template v-else>
+            <!-- Salary Summary -->
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-8 mb-8">
+              <div class="space-y-1">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Average Monthly</p>
+                <p class="text-2xl font-black text-white">{{ formatAmount(averageMonthly) }}</p>
+              </div>
+              <div class="space-y-1">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Year to Date</p>
+                <p class="text-2xl font-black text-blue-400">{{ formatAmount(yearToDate) }}</p>
+              </div>
+              <div class="hidden sm:block space-y-1">
+                <p class="text-xs text-slate-500 font-bold uppercase tracking-widest">Projection</p>
+                <p class="text-2xl font-black text-indigo-400">{{ formatAmount(projection) }}</p>
               </div>
             </div>
-            
-            <!-- X-Axis Labels -->
-            <div class="absolute -bottom-6 inset-x-0 flex justify-between px-2 text-[10px] font-bold text-slate-600 uppercase tracking-tighter">
-              <span v-for="item in salaryData" :key="item.month" class="flex-1 text-center">{{ item.month }}</span>
-            </div>
 
-            <!-- Grid Lines (Horizontal) -->
-            <div class="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
-              <div v-for="i in 4" :key="i" class="w-full h-px bg-slate-400"></div>
+            <!-- Simple SVG Chart -->
+            <div class="h-64 w-full mt-auto relative group">
+              <div v-if="yearToDate === 0" class="absolute inset-0 flex items-center justify-center border border-dashed border-slate-800 rounded-2xl bg-slate-900/20">
+                <p class="text-slate-600 text-sm italic">No salary data available for {{ currentYear }}</p>
+              </div>
+              <template v-else>
+                <div class="absolute inset-0 flex items-end justify-between px-2 gap-1 sm:gap-2">
+                  <div 
+                    v-for="(item, index) in salaryData" 
+                    :key="index"
+                    class="relative flex-1 group/bar"
+                    :style="{ height: `${(item.amount / maxAmount) * 100}%` }"
+                  >
+                    <div 
+                      class="w-full h-full bg-gradient-to-t from-blue-600/20 to-blue-500/60 rounded-t-sm sm:rounded-t-md transition-all duration-500 group-hover/bar:to-blue-400 group-hover/bar:shadow-[0_0_20px_rgba(59,130,246,0.5)]"
+                    ></div>
+                    <!-- Tooltip -->
+                    <div class="absolute -top-10 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] py-1 px-2 rounded opacity-0 group-hover/bar:opacity-100 transition-opacity whitespace-nowrap z-20 pointer-events-none border border-slate-700 shadow-xl">
+                      {{ item.month }}: {{ formatAmount(item.amount) }}
+                    </div>
+                  </div>
+                </div>
+                
+                <!-- X-Axis Labels -->
+                <div class="absolute -bottom-6 inset-x-0 flex justify-between px-2 text-[10px] font-bold text-slate-600 uppercase tracking-tighter">
+                  <span v-for="item in salaryData" :key="item.month" class="flex-1 text-center">{{ item.month }}</span>
+                </div>
+
+                <!-- Grid Lines (Horizontal) -->
+                <div class="absolute inset-0 flex flex-col justify-between pointer-events-none opacity-10">
+                  <div v-for="i in 4" :key="i" class="w-full h-px bg-slate-400"></div>
+                </div>
+              </template>
             </div>
-          </div>
+          </template>
         </CardContent>
       </Card>
 

@@ -5,6 +5,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
 import { LayoutDashboard, Users, Upload, MessageSquare, LogOut, FileText, ChevronRight, Settings } from 'lucide-vue-next'
 import { useRouter, useRoute } from 'vue-router'
+import { computed } from 'vue'
 
 const authStore = useAuthStore()
 const router = useRouter()
@@ -15,6 +16,7 @@ const hrNavigation = [
   { name: 'Employees', href: '/hr/employees', icon: Users },
   { name: 'Upload Payroll', href: '/hr/upload', icon: Upload },
   { name: 'Concerns', href: '/hr/concerns', icon: MessageSquare },
+  { name: 'Company Settings', href: '/hr/settings', icon: Settings },
 ]
 
 const employeeNavigation = [
@@ -24,10 +26,21 @@ const employeeNavigation = [
   { name: 'Settings', href: '/employee/settings', icon: Settings },
 ]
 
-const navigation = authStore.profile?.role === 'hr' ? hrNavigation : employeeNavigation
+const navigation = computed(() => authStore.profile?.role === 'hr' ? hrNavigation : employeeNavigation)
 
-function handleLogout() {
+async function handleLogout() {
+  console.log('Instant logout initiated...')
+  
+  // 1. Clear local caches to keep HR/Employee data secure
+  localStorage.removeItem('hr_employees_cache')
+  localStorage.removeItem('hr_dashboard_stats_cache')
+  localStorage.removeItem('employee_payslips_cache')
+  
+  // 2. Trigger the actual signOut (background)
   authStore.signOut()
+  
+  // 3. Immediate redirect
+  router.push('/login')
 }
 </script>
 
@@ -81,12 +94,12 @@ function handleLogout() {
           <DropdownMenuContent class="w-56 bg-slate-900 border-slate-800 text-slate-200 shadow-2xl" align="end" :side-offset="10">
             <DropdownMenuLabel>My Account</DropdownMenuLabel>
             <DropdownMenuSeparator class="bg-slate-800" />
-            <DropdownMenuItem @click="router.push({ name: 'employee-settings' })" class="text-slate-300 focus:text-white focus:bg-slate-800 cursor-pointer">
+            <DropdownMenuItem @select="router.push({ name: 'employee-settings' })" class="text-slate-300 focus:text-white focus:bg-slate-800 cursor-pointer">
               <Settings class="mr-2 h-4 w-4" />
               <span>Settings</span>
             </DropdownMenuItem>
             <DropdownMenuSeparator class="bg-slate-800" />
-            <DropdownMenuItem @click="handleLogout" class="text-red-400 focus:text-red-400 focus:bg-red-400/10 cursor-pointer">
+            <DropdownMenuItem @select="handleLogout" class="text-red-400 focus:text-red-400 focus:bg-red-400/10 cursor-pointer">
               <LogOut class="mr-2 h-4 w-4" />
               <span>Log out</span>
             </DropdownMenuItem>

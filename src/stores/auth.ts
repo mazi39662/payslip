@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { supabase } from '@/utils/supabase'
-import router from '@/router'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<any>(null)
@@ -18,6 +17,7 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       supabase.auth.onAuthStateChange(async (_event, session) => {
+        console.log('Auth state changed:', _event, session?.user?.id)
         user.value = session?.user ?? null
         if (user.value) {
           await fetchProfile()
@@ -25,6 +25,8 @@ export const useAuthStore = defineStore('auth', () => {
           profile.value = null
         }
       })
+    } catch (error) {
+      console.error('Error initializing auth:', error)
     } finally {
       loading.value = false
     }
@@ -46,16 +48,28 @@ export const useAuthStore = defineStore('auth', () => {
       } else {
         profile.value = data
       }
+    } catch (error) {
+      console.error('Unexpected error fetching profile:', error)
     } finally {
       loading.value = false
     }
   }
 
   async function signOut() {
-    await supabase.auth.signOut()
-    user.value = null
-    profile.value = null
-    router.push('/login')
+    console.log('Starting signOut...')
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) throw error
+      
+      user.value = null
+      profile.value = null
+      console.log('SignOut successful')
+    } catch (error) {
+      console.error('Error during signOut:', error)
+      // Even if there's an error, we should probably clear local state
+      user.value = null
+      profile.value = null
+    }
   }
 
   return { user, profile, loading, init, fetchProfile, signOut }

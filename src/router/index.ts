@@ -33,6 +33,11 @@ const routes = [
         path: 'concerns',
         name: 'hr-concerns',
         component: () => import('@/pages/hr/ConcernsPage.vue')
+      },
+      {
+        path: 'settings',
+        name: 'hr-settings',
+        component: () => import('@/pages/hr/SettingsPage.vue')
       }
     ]
   },

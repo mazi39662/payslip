@@ -36,7 +36,26 @@ const settingsStore = useSettingsStore()
 const searchQuery = ref('')
 const selectedMonth = ref(0) // 0 means 'All Months'
 const payslips = ref<any[]>([])
-const isLoading = ref(true)
+const isLoading = ref(false)
+const companyInfo = ref({
+  name: 'PayFlow Corp.',
+  address: '123 Business Rd, Tech City'
+})
+
+const CACHE_KEY = computed(() => `payslips_list_cache_${authStore.user?.id}`)
+
+function loadCache() {
+  if (!authStore.user) return
+  const cached = localStorage.getItem(CACHE_KEY.value)
+  if (cached) {
+    try {
+      payslips.value = JSON.parse(cached)
+      console.log('Payslips cache loaded')
+    } catch (e) {
+      console.error('Error parsing payslips cache:', e)
+    }
+  }
+}
 
 const months = [
   { label: 'All Months', value: 0 },
@@ -60,10 +79,12 @@ async function fetchPayslips() {
     return
   }
   
-  isLoading.value = true
-  payslips.value = [] // Clear existing data to ensure a fresh look
+  if (payslips.value.length === 0) {
+    isLoading.value = true
+  }
+
   try {
-    console.log('Fetching payslips for user:', authStore.user.id)
+    console.log('Fetching fresh payslips for user:', authStore.user.id)
     const { data, error } = await supabase
       .from('payslips')
       .select('*')
@@ -76,10 +97,10 @@ async function fetchPayslips() {
       throw error
     }
 
-    console.log('Raw Payslips Data:', data)
+    console.log('Raw Payslips Data fetched:', data?.length || 0)
 
     // Map Supabase data to the UI structure
-    payslips.value = data.map(p => ({
+    const mappedData = (data || []).map(p => ({
       id: p.id.slice(0, 8).toUpperCase(), // Using short ID for display
       period: `${months.find(m => m.value === p.month)?.label || ''} ${p.year}`,
       date: new Date(p.created_at).toLocaleDateString(),
@@ -99,10 +120,32 @@ async function fetchPayslips() {
         ]
       }
     }))
+
+    payslips.value = mappedData
+    localStorage.setItem(CACHE_KEY.value, JSON.stringify(mappedData))
   } catch (error: any) {
     console.error('Error fetching payslips:', error.message)
-  } finally {
+    } finally {
     isLoading.value = false
+  }
+}
+
+async function fetchCompanySettings() {
+  try {
+    const { data, error } = await supabase
+      .from('company_settings')
+      .select('*')
+      .maybeSingle()
+
+    if (data) {
+      companyInfo.value = {
+        name: data.company_name,
+        address: data.address,
+        logo_url: data.logo_url
+      }
+    }
+  } catch (error) {
+    console.error('Error fetching company settings:', error)
   }
 }
 
@@ -110,18 +153,19 @@ async function fetchPayslips() {
 import { onMounted, watch } from 'vue'
 
 onMounted(() => {
-  console.log('PayslipsPage mounted, user:', authStore.user?.id)
-  if (authStore.user) {
-    fetchPayslips()
-  }
+  fetchCompanySettings()
 })
 
 watch(() => authStore.user, (newUser) => {
-  console.log('Auth user changed:', newUser?.id)
+  console.log('Auth user changed, fetching payslips:', newUser?.id)
   if (newUser) {
+    loadCache()
     fetchPayslips()
+  } else {
+    payslips.value = []
+    isLoading.value = false
   }
-})
+}, { immediate: true })
 
 const filteredPayslips = computed(() => {
   return payslips.value.filter(p => {
@@ -225,7 +269,13 @@ const getTotalDeductions = (payslip: any) => {
       </Button>
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 class="text-3xl font-extrabold text-white tracking-tight">Your Payslips</h1>
+          <div class="flex items-center gap-3">
+            <h1 class="text-3xl font-extrabold text-white tracking-tight">Your Payslips</h1>
+            <div v-if="isLoading && payslips.length > 0" class="flex items-center gap-2 px-3 py-1 bg-blue-500/10 border border-blue-500/20 rounded-full">
+              <div class="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
+              <span class="text-[10px] text-blue-400 font-bold uppercase tracking-widest animate-pulse">Updating...</span>
+            </div>
+          </div>
           <p class="text-slate-400">View and download your salary history.</p>
         </div>
       </div>
@@ -257,7 +307,7 @@ const getTotalDeductions = (payslip: any) => {
     </div>
 
     <!-- Payslip Grid -->
-    <div v-if="isLoading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+    <div v-if="isLoading && payslips.length === 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
       <div v-for="i in 3" :key="i" class="h-48 bg-slate-900/40 border border-slate-800 animate-pulse rounded-3xl"></div>
     </div>
     <div v-else-if="filteredPayslips.length > 0" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
@@ -338,15 +388,21 @@ const getTotalDeductions = (payslip: any) => {
             <div id="payslip-modal-content" class="p-8 space-y-8 bg-slate-950">
               <!-- Company & Employee Info -->
               <div class="flex justify-between items-start">
-                <div class="space-y-4">
-                  <div>
-                    <h3 class="text-lg font-black text-white uppercase tracking-tighter">ANTIGRAVITY TECH CORP.</h3>
-                    <p class="text-xs text-slate-500">123 Innovation Drive, Silicon Valley, CA</p>
+                <div class="space-y-4 text-left">
+                  <div class="flex items-center gap-4">
+                    <img v-if="companyInfo.logo_url" :src="companyInfo.logo_url" class="h-12 w-auto object-contain" alt="Logo" />
+                    <div>
+                      <h3 class="text-lg font-black text-white uppercase tracking-tighter">{{ companyInfo.name }}</h3>
+                      <p class="text-xs text-slate-500">{{ companyInfo.address }}</p>
+                    </div>
                   </div>
                   <div class="space-y-1">
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Employee Name</p>
-                    <p class="text-base font-bold text-white">{{ authStore.profile?.full_name || 'John Doe' }}</p>
-                    <p class="text-xs text-slate-400">Software Engineer • Engineering Dept.</p>
+                    <p class="text-base font-bold text-white">{{ authStore.profile?.full_name }}</p>
+                    <p class="text-xs text-slate-400">
+                      {{ authStore.profile?.job_position || 'Staff' }} 
+                      {{ authStore.profile?.department_name ? `• ${authStore.profile?.department_name}` : '' }}
+                    </p>
                   </div>
                 </div>
                 <div class="text-right space-y-4">
