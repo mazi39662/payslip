@@ -39,7 +39,8 @@ const payslips = ref<any[]>([])
 const isLoading = ref(false)
 const companyInfo = ref({
   name: 'PayFlow Corp.',
-  address: '123 Business Rd, Tech City'
+  address: '123 Business Rd, Tech City',
+  logo_url: '' as string | undefined
 })
 
 const CACHE_KEY = computed(() => `payslips_list_cache_${authStore.user?.id}`)
@@ -132,7 +133,7 @@ async function fetchPayslips() {
 
 async function fetchCompanySettings() {
   try {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('company_settings')
       .select('*')
       .maybeSingle()

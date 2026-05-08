@@ -8,15 +8,11 @@ import {
   Upload, 
   FileSpreadsheet, 
   CheckCircle2, 
-  AlertCircle, 
   Loader2,
   X,
   FileCheck,
-  ChevronRight,
   Info,
   History,
-  TrendingUp,
-  Download,
   Trash2
 } from 'lucide-vue-next'
 import { 

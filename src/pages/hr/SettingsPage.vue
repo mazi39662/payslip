@@ -22,7 +22,7 @@ const company = ref({
 async function fetchSettings() {
   isLoading.value = true
   try {
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from('company_settings')
       .select('*')
       .maybeSingle()
