@@ -346,8 +346,8 @@ const getTotalDeductions = (payslip: any) => {
         </DialogTrigger>
 
         <DialogContent class="sm:max-w-[700px] bg-slate-950 border-slate-800 p-0 overflow-hidden rounded-[2rem]">
-          <div class="flex flex-col h-full">
-            <div class="p-8 pb-4">
+          <div class="flex flex-col max-h-[90vh]">
+            <div class="p-8 pb-4 shrink-0">
               <DialogHeader>
                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-6 mb-4">
                   <div class="flex items-center gap-4">
@@ -386,7 +386,7 @@ const getTotalDeductions = (payslip: any) => {
             <Separator class="bg-slate-800" />
 
             <!-- Payslip Content (This is what will be captured) -->
-            <div id="payslip-modal-content" class="p-8 space-y-8 bg-slate-950">
+            <div id="payslip-modal-content" class="flex-1 overflow-y-auto p-8 space-y-8 bg-slate-950 custom-scrollbar">
               <!-- Company & Employee Info -->
               <div class="flex justify-between items-start">
                 <div class="space-y-4 text-left">
@@ -502,5 +502,22 @@ const getTotalDeductions = (payslip: any) => {
 .dialog-content-leave-to {
   opacity: 0;
   transform: scale(0.95) translateY(10px);
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #1e293b;
+  border-radius: 10px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #334155;
 }
 </style>
