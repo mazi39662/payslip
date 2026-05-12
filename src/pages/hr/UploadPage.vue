@@ -27,14 +27,26 @@ import { Badge } from '@/components/ui/badge'
 
 interface ProcessedPayslip {
   employee_no: string
-  month: number
-  year: number
+  payroll_no: string
+  employee_name: string
+  branch: string
+  payroll_date: string
+  payroll_period: string
+  days_worked: number
+  daily_rate: number
   basic_salary: number
-  allowances: number
-  deductions: number
-  net_salary: number
+  allowance: number
+  gross_income: number
+  sss_contribution: number
+  phic: number
+  hdmf: number
+  withholding_tax: number
+  coop_share: number
+  coop_loan: number
+  lates: number
+  total_deductions: number
+  net_pay: number
   employee_id?: string
-  employee_name?: string
   status: 'valid' | 'invalid'
   error?: string
 }
@@ -57,6 +69,29 @@ const employeesMap = ref<Map<string, { id: string, name: string }>>(new Map())
 const uploadSuccess = ref(false)
 const uploadHistory = ref<UploadHistoryItem[]>([])
 const currentFileName = ref('')
+
+const excelColumns = [
+  { name: 'Employee No', type: 'Text/ID' },
+  { name: 'Payroll No.', type: 'Text/ID' },
+  { name: 'Employee Name', type: 'Text' },
+  { name: 'Branch', type: 'Text' },
+  { name: 'Payroll Date', type: 'Date' },
+  { name: 'Period', type: 'Text' },
+  { name: 'Days', type: 'Number' },
+  { name: 'Daily Rate', type: 'Number' },
+  { name: 'Basic Salary', type: 'Number' },
+  { name: 'Allowance', type: 'Number' },
+  { name: 'Gross Income', type: 'Number' },
+  { name: 'SSS', type: 'Number' },
+  { name: 'PHIC', type: 'Number' },
+  { name: 'HDMF', type: 'Number' },
+  { name: 'Withholding Tax', type: 'Number' },
+  { name: 'COOP SHARE', type: 'Number' },
+  { name: 'COOP LOAN', type: 'Number' },
+  { name: 'LATES', type: 'Number' },
+  { name: 'Total Deductions', type: 'Number' },
+  { name: 'Net Pay', type: 'Number' },
+]
 
 const isInitialLoading = ref(true)
 
@@ -98,12 +133,17 @@ async function fetchData() {
 
 onMounted(() => {
   fetchData()
+  
+  // Safety timeout to ensure the overlay disappears even if network is slow
+  setTimeout(() => {
+    isInitialLoading.value = false
+  }, 5000)
 })
 
 const totalNetSalary = computed(() => {
   return rawData.value
     .filter(d => d.status === 'valid')
-    .reduce((sum, d) => sum + d.net_salary, 0)
+    .reduce((sum, d) => sum + d.net_pay, 0)
 })
 
 const processFile = async (file: File) => {
@@ -125,22 +165,42 @@ const processFile = async (file: File) => {
       const workbook = XLSX.read(data, { type: 'array' })
       const firstSheetName = workbook.SheetNames[0]
       const worksheet = workbook.Sheets[firstSheetName]
-      const json = XLSX.utils.sheet_to_json(worksheet) as any[]
+      const json = XLSX.utils.sheet_to_json(worksheet, { cellDates: true } as any) as any[]
+
+      // Helper to format date for Supabase (YYYY-MM-DD)
+      const formatDateForDB = (val: any) => {
+        if (!val) return null
+        const date = new Date(val)
+        if (isNaN(date.getTime())) return null
+        return date.toISOString().split('T')[0]
+      }
 
       rawData.value = json.map(row => {
-        const empNo = (row.employee_no || row.EmployeeNo || row['Employee No'] || '').toString()
+        const empNo = (row['Employee No'] || row.employee_no || row.EmployeeNo || '').toString()
         const emp = employeesMap.value.get(empNo)
         
         return {
           employee_no: empNo,
-          month: parseInt(row.month || row.Month || 0),
-          year: parseInt(row.year || row.Year || 0),
-          basic_salary: parseFloat(row.basic_salary || row.BasicSalary || 0),
-          allowances: parseFloat(row.allowances || row.Allowances || 0),
-          deductions: parseFloat(row.deductions || row.Deductions || 0),
-          net_salary: parseFloat(row.net_salary || row.NetSalary || 0),
+          payroll_no: (row['Payroll No.'] || row.payroll_no || row.PayrollNo || '').toString(),
+          employee_name: row['Employee Name'] || row.employee_name || row.EmployeeName || emp?.name || 'Unknown',
+          branch: row['Branch'] || row.branch || row.Branch || '',
+          payroll_date: formatDateForDB(row['Payroll Date'] || row.payroll_date || row.PayrollDate || ''),
+          payroll_period: row['Period'] || row.payroll_period || row.PayrollPeriod || '',
+          days_worked: parseFloat(row['Days'] || row.days_worked || row.DaysWorked || 0),
+          daily_rate: parseFloat(row['Daily Rate'] || row.daily_rate || row.DailyRate || 0),
+          basic_salary: parseFloat(row['Basic Salary'] || row.basic_salary || row.BasicSalary || 0),
+          allowance: parseFloat(row['Allowance'] || row.allowance || row.Allowance || 0),
+          gross_income: parseFloat(row['Gross Income'] || row.gross_income || row.GrossIncome || 0),
+          sss_contribution: parseFloat(row['SSS'] || row.sss_contribution || row.SSSContribution || 0),
+          phic: parseFloat(row['PHIC'] || row.phic || row.PHIC || 0),
+          hdmf: parseFloat(row['HDMF'] || row.hdmf || row.HDMF || 0),
+          withholding_tax: parseFloat(row['Withholding Tax'] || row.withholding_tax || row.WithholdingTax || 0),
+          coop_share: parseFloat(row['COOP SHARE'] || row.coop_share || row.CoopShare || 0),
+          coop_loan: parseFloat(row['COOP LOAN'] || row.coop_loan || row.CoopLoan || 0),
+          lates: parseFloat(row['LATES'] || row.lates || row.Lates || 0),
+          total_deductions: parseFloat(row['Total Deductions'] || row.total_deductions || row.TotalDeductions || 0),
+          net_pay: parseFloat(row['Net Pay'] || row.net_pay || row.NetPay || 0),
           employee_id: emp?.id,
-          employee_name: emp?.name,
           status: emp ? 'valid' : 'invalid',
           error: emp ? undefined : 'Employee No not found'
         } as ProcessedPayslip
@@ -181,13 +241,26 @@ const handleUpload = async () => {
     for (let i = 0; i < validData.length; i += BATCH_SIZE) {
       const chunk = validData.slice(i, i + BATCH_SIZE).map(d => ({
         employee_id: d.employee_id,
-        month: d.month,
-        year: d.year,
+        payroll_no: d.payroll_no,
+        employee_name: d.employee_name,
+        branch: d.branch,
+        payroll_date: d.payroll_date,
+        payroll_period: d.payroll_period,
+        days_worked: d.days_worked,
+        daily_rate: d.daily_rate,
         basic_salary: d.basic_salary,
-        allowances: d.allowances,
-        deductions: d.deductions,
-        net_salary: d.net_salary,
-        upload_id: historyRecord.id // Link payslips to this upload session
+        allowance: d.allowance,
+        gross_income: d.gross_income,
+        sss_contribution: d.sss_contribution,
+        phic: d.phic,
+        hdmf: d.hdmf,
+        withholding_tax: d.withholding_tax,
+        coop_share: d.coop_share,
+        coop_loan: d.coop_loan,
+        lates: d.lates,
+        total_deductions: d.total_deductions,
+        net_pay: d.net_pay,
+        upload_id: historyRecord.id
       }))
 
       const { error } = await supabase.from('payslips').insert(chunk)
@@ -355,15 +428,19 @@ const handleFileChange = (e: Event) => {
         </Card>
 
         <!-- Excel Guide -->
-        <Card class="bg-slate-900/40 border-slate-800 border-l-4 border-l-blue-500">
+        <Card class="bg-slate-900/40 border-slate-800 border-l-4 border-l-blue-500 overflow-hidden">
           <CardContent class="p-6 space-y-4">
             <div class="flex items-center gap-2 text-blue-400">
               <Info class="w-5 h-5" />
               <h3 class="font-bold uppercase tracking-widest text-xs">Excel Format Guide</h3>
             </div>
-            <div class="grid grid-cols-2 gap-2">
-              <code v-for="col in ['employee_no', 'month', 'year', 'basic_salary', 'allowances', 'deductions', 'net_salary']" :key="col" class="text-[10px] bg-slate-800 px-2 py-1 rounded text-blue-300 border border-blue-500/10">{{ col }}</code>
+            <div class="space-y-2 max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+              <div v-for="col in excelColumns" :key="col.name" class="flex items-center justify-between p-2 rounded-lg bg-slate-800/30 border border-slate-800/50 group/item hover:bg-slate-800/50 transition-colors">
+                <span class="text-[10px] font-bold text-slate-300">{{ col.name }}</span>
+                <span class="text-[9px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 font-black uppercase tracking-tighter">{{ col.type }}</span>
+              </div>
             </div>
+            <p class="text-[10px] text-slate-500 italic mt-2 text-center">Note: Headers must match exactly.</p>
           </CardContent>
         </Card>
       </div>
@@ -399,8 +476,8 @@ const handleFileChange = (e: Event) => {
                     <p class="text-sm font-bold" :class="row.status === 'valid' ? 'text-white' : 'text-slate-500'">{{ row.employee_name || 'Unknown' }}</p>
                     <p class="text-[10px] text-slate-500">ID: {{ row.employee_no }}</p>
                   </TableCell>
-                  <TableCell class="text-sm text-slate-300">{{ row.month }}/{{ row.year }}</TableCell>
-                  <TableCell class="text-right text-sm font-bold text-white">${{ row.net_salary.toLocaleString() }}</TableCell>
+                  <TableCell class="text-sm text-slate-300">{{ row.payroll_period || row.payroll_date }}</TableCell>
+                  <TableCell class="text-right text-sm font-bold text-white">${{ row.net_pay.toLocaleString() }}</TableCell>
                   <TableCell class="text-center">
                     <Badge v-if="row.status === 'valid'" class="bg-emerald-500/20 text-emerald-400 border-emerald-500/20 text-[10px]">Valid</Badge>
                     <Badge v-else variant="destructive" class="text-[10px]">{{ row.error }}</Badge>

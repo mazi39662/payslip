@@ -30,11 +30,6 @@ const routes = [
         component: () => import('@/pages/hr/UploadPage.vue')
       },
       {
-        path: 'concerns',
-        name: 'hr-concerns',
-        component: () => import('@/pages/hr/ConcernsPage.vue')
-      },
-      {
         path: 'settings',
         name: 'hr-settings',
         component: () => import('@/pages/hr/SettingsPage.vue')
@@ -55,11 +50,6 @@ const routes = [
         path: 'payslips',
         name: 'employee-payslips',
         component: () => import('@/pages/employee/PayslipsPage.vue')
-      },
-      {
-        path: 'concerns',
-        name: 'employee-concerns',
-        component: () => import('@/pages/employee/ConcernsPage.vue')
       },
       {
         path: 'settings',

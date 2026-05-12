@@ -7,13 +7,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button'
 import { 
   FileText, 
-  MessageSquare, 
   Eye, 
   EyeOff, 
   TrendingUp, 
   Calendar, 
-  Bell, 
-  ChevronRight
+  Bell
 } from 'lucide-vue-next'
 import { supabase } from '@/utils/supabase'
 
@@ -34,7 +32,6 @@ const formatAmount = (amount: number) => {
 }
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-const currentYear = new Date().getFullYear()
 
 // Load cache immediately
 function loadCache() {
@@ -63,10 +60,9 @@ async function fetchAnalyticsData() {
     console.log('Fetching fresh analytics from Supabase...')
     const { data, error } = await supabase
       .from('payslips')
-      .select('month, year, net_salary')
+      .select('payroll_date, net_pay')
       .eq('employee_id', authStore.user.id)
-      .order('year', { ascending: true })
-      .order('month', { ascending: true })
+      .order('payroll_date', { ascending: true })
 
     if (error) {
       console.error('Supabase Query Error:', error)
@@ -86,9 +82,12 @@ async function fetchAnalyticsData() {
   }
 }
 
-watch(() => authStore.user, (newUser) => {
-  console.log('Auth user watcher triggered:', newUser?.id)
-  if (newUser) {
+watch(() => authStore.user?.id, (newUserId, oldUserId) => {
+  console.log('Dashboard Auth Watch:', { old: oldUserId, new: newUserId })
+  if (newUserId) {
+    if (newUserId !== oldUserId) {
+      rawPayslips.value = []
+    }
     loadCache()
     fetchAnalyticsData()
   } else {
@@ -97,14 +96,27 @@ watch(() => authStore.user, (newUser) => {
   }
 }, { immediate: true })
 
+const selectedYear = computed(() => {
+  if (rawPayslips.value.length === 0) return new Date().getFullYear()
+  // Find the latest year in the data
+  const years = rawPayslips.value.map(p => new Date(p.payroll_date).getFullYear())
+  return Math.max(...years)
+})
+
 const salaryData = computed(() => {
   const data = months.map((month, index) => {
     const monthNum = index + 1
-    // Filter by both month and current year
-    const payslip = rawPayslips.value.find(p => p.month === monthNum && p.year === currentYear)
+    // Filter and sum all payslips for this month and year
+    const monthlyPayslips = rawPayslips.value.filter(p => {
+      const date = new Date(p.payroll_date)
+      return (date.getMonth() + 1) === monthNum && date.getFullYear() === selectedYear.value
+    })
+    
+    const totalAmount = monthlyPayslips.reduce((sum, p) => sum + Number(p.net_pay), 0)
+    
     return {
       month,
-      amount: payslip ? Number(payslip.net_salary) : 0
+      amount: totalAmount
     }
   })
   return data
@@ -132,29 +144,6 @@ const projection = computed(() => {
   return (yearToDate.value / paidMonths) * 12
 })
 
-const newsItems = [
-  {
-    id: 1,
-    title: 'New Health Insurance Provider',
-    description: 'We are switching to a new provider starting next month with better coverage.',
-    date: '2 hours ago',
-    type: 'announcement'
-  },
-  {
-    id: 2,
-    title: 'Quarterly Bonus Update',
-    description: 'Performance bonuses for Q1 have been processed and will be reflected in your next payslip.',
-    date: 'Yesterday',
-    type: 'finance'
-  },
-  {
-    id: 3,
-    title: 'Upcoming Office Maintenance',
-    description: 'The office will be closed this Friday for scheduled maintenance.',
-    date: '3 days ago',
-    type: 'maintenance'
-  }
-]
 </script>
 
 <template>
@@ -165,7 +154,13 @@ const newsItems = [
         <h1 class="text-3xl font-extrabold text-white tracking-tight sm:text-4xl">
           Welcome back, <span class="bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-indigo-400">{{ authStore.profile?.full_name?.split(' ')[0] || 'User' }}</span> 👋
         </h1>
-        <p class="text-slate-400">Here's what's happening with your payroll and workplace.</p>
+        <div class="flex items-center gap-2 mt-1">
+          <p class="text-slate-400">Here's what's happening with your payroll and workplace.</p>
+          <span class="text-slate-600">•</span>
+          <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-blue-500/20">
+            ID: {{ authStore.profile?.employee_no }}
+          </span>
+        </div>
       </div>
       <div class="flex items-center gap-3">
         <Button variant="outline" size="icon" class="rounded-full border-slate-800 bg-slate-900/50 text-slate-400 hover:text-white hover:bg-slate-800">
@@ -234,7 +229,7 @@ const newsItems = [
             <!-- Simple SVG Chart -->
             <div class="h-64 w-full mt-auto relative group">
               <div v-if="yearToDate === 0" class="absolute inset-0 flex items-center justify-center border border-dashed border-slate-800 rounded-2xl bg-slate-900/20">
-                <p class="text-slate-600 text-sm italic">No salary data available for {{ currentYear }}</p>
+                <p class="text-slate-600 text-sm italic">No salary data available for {{ selectedYear }}</p>
               </div>
               <template v-else>
                 <div class="absolute inset-0 flex items-end justify-between px-2 gap-1 sm:gap-2">
@@ -276,87 +271,64 @@ const newsItems = [
             <CardTitle class="text-xl font-bold text-white">Quick Actions</CardTitle>
             <CardDescription class="text-slate-500">Frequently used shortcuts</CardDescription>
           </CardHeader>
-          <CardContent class="grid grid-cols-2 gap-4">
+          <CardContent>
             <Button 
               @click="router.push({ name: 'employee-payslips' })"
-              class="flex flex-col h-28 gap-3 bg-blue-600 hover:bg-blue-500 text-white border-none shadow-lg shadow-blue-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
+              class="flex flex-col w-full h-32 gap-3 bg-blue-600 hover:bg-blue-500 text-white border-none shadow-lg shadow-blue-900/20 transition-all hover:scale-[1.02] active:scale-[0.98]"
             >
-              <div class="p-2 bg-white/20 rounded-xl">
-                <FileText class="w-6 h-6" />
+              <div class="p-3 bg-white/20 rounded-2xl">
+                <FileText class="w-8 h-8" />
               </div>
-              <span class="font-bold">Payslips</span>
-            </Button>
-            
-            <Button 
-              variant="outline"
-              @click="router.push({ name: 'employee-concerns' })"
-              class="flex flex-col h-28 gap-3 border-slate-800 bg-slate-800/40 text-slate-300 hover:bg-slate-800 hover:text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-            >
-              <div class="p-2 bg-slate-700/50 rounded-xl text-blue-400">
-                <MessageSquare class="w-6 h-6" />
-              </div>
-              <span class="font-bold">Concern</span>
+              <span class="text-lg font-bold">View My Payslips</span>
             </Button>
           </CardContent>
         </Card>
 
         <!-- Card 3: News & Updates -->
-        <Card class="bg-slate-900/40 border-slate-800 shadow-xl backdrop-blur-md flex flex-col">
+        <Card class="bg-slate-900/40 border-slate-800 shadow-xl backdrop-blur-md flex flex-col relative overflow-hidden group">
+          <!-- Subtle background decorative element -->
+          <div class="absolute -right-4 -top-4 w-24 h-24 bg-blue-500/5 rounded-full blur-2xl group-hover:bg-blue-500/10 transition-colors"></div>
+          
           <CardHeader class="pb-2">
             <div class="flex items-center justify-between">
               <CardTitle class="text-xl font-bold text-white">News & Updates</CardTitle>
-              <div class="bg-blue-500/10 text-blue-400 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-blue-500/20">
-                3 New
+              <div class="bg-slate-800 text-slate-400 text-[10px] px-2 py-0.5 rounded-full font-black uppercase tracking-widest border border-slate-700">
+                0 New
               </div>
             </div>
           </CardHeader>
-          <CardContent class="flex-1">
-            <div class="space-y-4">
-              <div 
-                v-for="news in newsItems" 
-                :key="news.id"
-                class="group cursor-pointer p-3 rounded-2xl hover:bg-slate-800/50 transition-all border border-transparent hover:border-slate-700/50"
-              >
-                <div class="flex gap-3">
-                  <div class="mt-1">
-                    <div v-if="news.type === 'finance'" class="w-2 h-2 rounded-full bg-emerald-500"></div>
-                    <div v-else-if="news.type === 'announcement'" class="w-2 h-2 rounded-full bg-blue-500"></div>
-                    <div v-else class="w-2 h-2 rounded-full bg-amber-500"></div>
-                  </div>
-                  <div class="space-y-1">
-                    <div class="flex items-center justify-between gap-2">
-                      <h4 class="text-sm font-bold text-slate-200 group-hover:text-white transition-colors">{{ news.title }}</h4>
-                      <span class="text-[10px] text-slate-500 whitespace-nowrap">{{ news.date }}</span>
-                    </div>
-                    <p class="text-xs text-slate-400 line-clamp-1 group-hover:text-slate-300">{{ news.description }}</p>
-                  </div>
-                </div>
-              </div>
+          <CardContent class="flex-1 flex flex-col items-center justify-center py-12 text-center">
+            <div class="p-4 bg-slate-800/50 rounded-2xl mb-4 group-hover:scale-110 transition-transform duration-500">
+              <Bell class="w-8 h-8 text-slate-500" />
             </div>
-            <Button variant="ghost" class="w-full mt-4 text-slate-500 hover:text-white hover:bg-slate-800/50 rounded-xl group text-xs font-bold uppercase tracking-widest">
-              View All Updates
-              <ChevronRight class="w-4 h-4 ml-1 group-hover:translate-x-1 transition-transform" />
+            <h3 class="text-lg font-bold text-slate-300">Coming Soon</h3>
+            <p class="text-xs text-slate-500 max-w-[180px] mt-2">
+              We're building a space for your company announcements and payroll updates.
+            </p>
+            
+            <!-- Hidden button for layout consistency but disabled/ghosted -->
+            <Button disabled variant="ghost" class="w-full mt-6 text-slate-600 cursor-not-allowed text-xs font-bold uppercase tracking-widest">
+              No active updates
             </Button>
           </CardContent>
         </Card>
       </div>
     </div>
 
-    <!-- Bottom Banner (Retained but refreshed) -->
-    <div class="relative overflow-hidden bg-gradient-to-r from-blue-600 to-indigo-700 rounded-[2rem] p-8 md:p-10 shadow-2xl group">
-      <div class="absolute top-0 right-0 w-96 h-96 bg-white/10 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-      <div class="absolute bottom-0 left-0 w-64 h-64 bg-indigo-900/20 rounded-full blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+    <!-- Professional Bottom Banner -->
+    <div class="relative overflow-hidden bg-slate-900 border border-slate-800 rounded-[2rem] p-8 md:p-10 shadow-2xl group">
+      <div class="absolute top-0 right-0 w-96 h-96 bg-blue-600/5 rounded-full blur-3xl -translate-y-1/2 translate-x-1/2"></div>
       
       <div class="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8">
         <div class="flex items-center gap-6">
-          <div class="p-5 bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 shadow-inner">
-            <Calendar class="w-10 h-10 text-white" />
+          <div class="p-5 bg-slate-800 rounded-2xl border border-slate-700 shadow-inner">
+            <Calendar class="w-10 h-10 text-blue-400" />
           </div>
           <div>
-            <p class="text-blue-100 text-sm font-bold uppercase tracking-[0.2em]">Upcoming Payroll</p>
+            <p class="text-slate-500 text-sm font-bold uppercase tracking-[0.2em]">Upcoming Payroll</p>
             <h2 class="text-white text-3xl md:text-4xl font-black tracking-tight mt-1">May 31, 2024</h2>
             <div class="flex items-center gap-2 mt-2">
-              <span class="text-xs bg-white/20 px-3 py-1 rounded-full text-white font-bold uppercase tracking-widest backdrop-blur-md">24 Days Remaining</span>
+              <span class="text-xs bg-blue-500/10 px-3 py-1 rounded-full text-blue-400 font-bold uppercase tracking-widest border border-blue-500/20">24 Days Remaining</span>
             </div>
           </div>
         </div>

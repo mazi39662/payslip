@@ -3,7 +3,7 @@ import { useAuthStore } from '@/stores/auth'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu'
-import { LayoutDashboard, Users, Upload, MessageSquare, LogOut, FileText, ChevronRight, Settings } from 'lucide-vue-next'
+import { LayoutDashboard, Users, Upload, LogOut, FileText, ChevronRight, Settings } from 'lucide-vue-next'
 import { useRouter, useRoute } from 'vue-router'
 import { computed } from 'vue'
 
@@ -15,14 +15,12 @@ const hrNavigation = [
   { name: 'Dashboard', href: '/hr/dashboard', icon: LayoutDashboard },
   { name: 'Employees', href: '/hr/employees', icon: Users },
   { name: 'Upload Payroll', href: '/hr/upload', icon: Upload },
-  { name: 'Concerns', href: '/hr/concerns', icon: MessageSquare },
   { name: 'Company Settings', href: '/hr/settings', icon: Settings },
 ]
 
 const employeeNavigation = [
   { name: 'Dashboard', href: '/employee/dashboard', icon: LayoutDashboard },
   { name: 'My Payslips', href: '/employee/payslips', icon: FileText },
-  { name: 'Concerns', href: '/employee/concerns', icon: MessageSquare },
   { name: 'Settings', href: '/employee/settings', icon: Settings },
 ]
 
@@ -50,10 +48,10 @@ async function handleLogout() {
     <aside class="w-64 border-r border-slate-800 bg-slate-900/50 backdrop-blur-xl hidden md:flex flex-col">
       <div class="p-6">
         <div class="flex items-center gap-3 px-2">
-          <div class="p-2 bg-blue-600 rounded-lg">
-            <FileText class="w-6 h-6 text-white" />
+          <div class="p-2 bg-slate-800 rounded-lg border border-slate-700">
+            <FileText class="w-6 h-6 text-blue-400" />
           </div>
-          <span class="text-xl font-bold text-white tracking-tight">PayFlow</span>
+          <span class="text-xl font-bold text-white tracking-tight italic">PayFlow</span>
         </div>
       </div>
 

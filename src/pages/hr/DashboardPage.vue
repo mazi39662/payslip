@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useAuthStore } from '@/stores/auth'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Users, FileText, AlertCircle, TrendingUp } from 'lucide-vue-next'
 import { supabase } from '@/utils/supabase'
 
+const authStore = useAuthStore()
 const totalEmployees = ref(0)
 const pendingConcerns = ref(0)
 const isLoading = ref(true)
@@ -77,7 +79,12 @@ const stats = [
 <template>
   <div class="space-y-8">
     <div class="flex flex-col gap-2">
-      <h1 class="text-4xl font-extrabold text-white tracking-tight">HR Dashboard</h1>
+      <div class="flex items-center gap-3">
+        <h1 class="text-4xl font-extrabold text-white tracking-tight">HR Dashboard</h1>
+        <span class="text-[10px] bg-blue-500/10 text-blue-400 px-2 py-0.5 rounded-full font-bold uppercase tracking-widest border border-blue-500/20 mt-1">
+          ID: {{ authStore.profile?.employee_no }}
+        </span>
+      </div>
       <p class="text-slate-400 text-lg">Welcome back. Here's an overview of your organization's payroll health.</p>
     </div>
 

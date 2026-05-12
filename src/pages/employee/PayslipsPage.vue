@@ -24,7 +24,7 @@ import { Separator } from '@/components/ui/separator'
 import { Badge } from '@/components/ui/badge'
 import { useAuthStore } from '@/stores/auth'
 import { useSettingsStore } from '@/stores/settings'
-import jsPDF from 'jspdf'
+import { jsPDF } from 'jspdf'
 import html2canvas from 'html2canvas'
 
 import { supabase } from '@/utils/supabase'
@@ -80,9 +80,7 @@ async function fetchPayslips() {
     return
   }
   
-  if (payslips.value.length === 0) {
-    isLoading.value = true
-  }
+  isLoading.value = true
 
   try {
     console.log('Fetching fresh payslips for user:', authStore.user.id)
@@ -90,8 +88,7 @@ async function fetchPayslips() {
       .from('payslips')
       .select('*')
       .eq('employee_id', authStore.user.id)
-      .order('year', { ascending: false })
-      .order('month', { ascending: false })
+      .order('payroll_date', { ascending: false })
 
     if (error) {
       console.error('Supabase Error:', error)
@@ -102,23 +99,39 @@ async function fetchPayslips() {
 
     // Map Supabase data to the UI structure
     const mappedData = (data || []).map(p => ({
-      id: p.id.slice(0, 8).toUpperCase(), // Using short ID for display
-      period: `${months.find(m => m.value === p.month)?.label || ''} ${p.year}`,
-      date: new Date(p.created_at).toLocaleDateString(),
-      netPay: Number(p.net_salary),
+      id: p.id.slice(0, 8).toUpperCase(),
+      payroll_no: p.payroll_no,
+      period: p.payroll_period || p.payroll_date,
+      date: p.payroll_date,
+      netPay: Number(p.net_pay),
       status: 'Paid',
       pdf_url: p.pdf_url,
-      month: p.month, // This is an integer now
-      year: p.year,
       employee_id: p.employee_id,
       details: {
+        info: [
+          { label: 'Payroll No', value: p.payroll_no },
+          { label: 'Branch', value: p.branch },
+          { label: 'Days Worked', value: p.days_worked },
+          { label: 'Daily Rate', value: formatCurrency(Number(p.daily_rate)) },
+        ],
         earnings: [
           { label: 'Basic Salary', amount: Number(p.basic_salary) },
-          { label: 'Allowances', amount: Number(p.allowances) },
+          { label: 'Allowance', amount: Number(p.allowance) },
         ],
         deductions: [
-          { label: 'Deductions', amount: Number(p.deductions) },
-        ]
+          { label: 'SSS Contribution', amount: Number(p.sss_contribution) },
+          { label: 'PHIC', amount: Number(p.phic) },
+          { label: 'HDMF', amount: Number(p.hdmf) },
+          { label: 'Withholding Tax', amount: Number(p.withholding_tax) },
+          { label: 'Coop Share', amount: Number(p.coop_share) },
+          { label: 'Coop Loan', amount: Number(p.coop_loan) },
+          { label: 'Lates', amount: Number(p.lates) },
+        ],
+        totals: {
+          gross_income: Number(p.gross_income),
+          total_deductions: Number(p.total_deductions),
+          net_pay: Number(p.net_pay)
+        }
       }
     }))
 
@@ -133,20 +146,29 @@ async function fetchPayslips() {
 
 async function fetchCompanySettings() {
   try {
-    const { data } = await supabase
+    console.log('Fetching company settings...')
+    const { data, error } = await supabase
       .from('company_settings')
       .select('*')
       .maybeSingle()
 
+    if (error) {
+      console.error('Supabase error fetching company settings:', error)
+      return
+    }
+
     if (data) {
+      console.log('Company settings received:', data.company_name)
       companyInfo.value = {
-        name: data.company_name,
-        address: data.address,
-        logo_url: data.logo_url
+        name: data.company_name || 'PayFlow Corp.',
+        address: data.address || '123 Business Rd, Tech City',
+        logo_url: data.logo_url || ''
       }
+    } else {
+      console.warn('No company settings found in database, using defaults.')
     }
   } catch (error) {
-    console.error('Error fetching company settings:', error)
+    console.error('Unexpected error fetching company settings:', error)
   }
 }
 
@@ -157,12 +179,17 @@ onMounted(() => {
   fetchCompanySettings()
 })
 
-watch(() => authStore.user, (newUser) => {
-  console.log('Auth user changed, fetching payslips:', newUser?.id)
-  if (newUser) {
+watch(() => authStore.user?.id, (newUserId, oldUserId) => {
+  console.log('User ID change:', { old: oldUserId, new: newUserId })
+  if (newUserId) {
+    // If it's a different user, clear data first
+    if (newUserId !== oldUserId) {
+      payslips.value = []
+    }
     loadCache()
     fetchPayslips()
   } else {
+    // Truly logged out
     payslips.value = []
     isLoading.value = false
   }
@@ -170,9 +197,15 @@ watch(() => authStore.user, (newUser) => {
 
 const filteredPayslips = computed(() => {
   return payslips.value.filter(p => {
+    // 1. Search Query Match
     const matchesSearch = p.period.toLowerCase().includes(searchQuery.value.toLowerCase()) || 
-                          p.id.toLowerCase().includes(searchQuery.value.toLowerCase())
-    const matchesMonth = selectedMonth.value === 0 || p.month === selectedMonth.value
+                          p.id.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
+                          p.payroll_no?.toLowerCase().includes(searchQuery.value.toLowerCase())
+    
+    // 2. Month Filter Match
+    const date = new Date(p.date)
+    const matchesMonth = selectedMonth.value === 0 || (date.getMonth() + 1) === selectedMonth.value
+    
     return matchesSearch && matchesMonth
   })
 })
@@ -203,56 +236,136 @@ const downloadPDF = async () => {
   }
 
   try {
-    // Create a temporary clone for PDF generation to avoid theme issues
+    // Create a temporary clone for PDF generation
     const clone = element.cloneNode(true) as HTMLElement
-    clone.style.width = '800px'
-    clone.style.padding = '40px'
-    clone.style.background = '#ffffff'
-    clone.style.color = '#000000'
-    // Ensure text colors are black for the clone
-    const allText = clone.querySelectorAll('*')
-    allText.forEach((el: any) => {
-        if (el.classList.contains('text-white')) el.classList.remove('text-white')
-        if (el.classList.contains('text-slate-400')) el.classList.remove('text-slate-400')
-        if (el.classList.contains('text-slate-500')) el.classList.remove('text-slate-500')
-        el.style.color = '#000000'
-    })
     
+    // Force styles for a professional A4 paper look
+    Object.assign(clone.style, {
+      width: '800px',
+      height: 'auto',
+      minHeight: '1000px', // Ensure it fills a good portion of A4
+      position: 'absolute',
+      top: '-9999px',
+      left: '-9999px',
+      backgroundColor: '#ffffff',
+      color: '#000000',
+      padding: '50px',
+      overflow: 'visible',
+      fontFamily: "'Inter', 'Segoe UI', Tahoma, sans-serif",
+      border: '2px solid #e2e8f0', // Outer document border
+      borderRadius: '0px' // Formal paper doesn't have rounded corners
+    })
+
+    // Remove the custom scrollbar and ensure full visibility
+    clone.classList.remove('custom-scrollbar', 'overflow-y-auto')
+    clone.style.maxHeight = 'none'
+
+    // Clean up colors for printing (Ink-friendly but keeping brand elements)
+    const allElements = clone.querySelectorAll('*')
+    allElements.forEach((el: any) => {
+      const element = el as HTMLElement
+      
+      // Professional Slate/Black banner for PDF
+      if (element.classList.contains('bg-slate-900') && element.classList.contains('p-8')) {
+        element.style.setProperty('background', '#0f172a', 'important');
+        element.style.setProperty('-webkit-print-color-adjust', 'exact');
+        element.style.borderRadius = '12px';
+        element.style.padding = '40px';
+        
+        // Ensure ALL nested text in this banner is white
+        const bannerText = element.querySelectorAll('*');
+        bannerText.forEach((t: any) => {
+          (t as HTMLElement).style.setProperty('color', '#ffffff', 'important');
+          if (t.classList.contains('text-4xl') || t.classList.contains('text-5xl')) {
+             (t as HTMLElement).style.fontSize = '36px';
+             (t as HTMLElement).style.fontWeight = '900';
+          }
+        });
+        return;
+      }
+
+      // Default print styles
+      element.style.backgroundColor = 'transparent'
+      element.style.color = '#000000'
+      element.style.boxShadow = 'none' // Remove UI shadows for print
+      
+      // Add subtle borders to data sections for structure
+      if (element.classList.contains('bg-slate-900') || element.classList.contains('bg-slate-950') || element.classList.contains('border-slate-800')) {
+        element.style.backgroundColor = '#fcfcfc'
+        element.style.border = '1px solid #e2e8f0'
+        element.style.borderRadius = '4px'
+      }
+
+      if (element.classList.contains('text-slate-400') || element.classList.contains('text-slate-500')) {
+        element.style.color = '#475569'
+        element.style.fontWeight = '600'
+      }
+      
+      if (element.classList.contains('text-white')) {
+        element.style.color = '#000000'
+      }
+      
+      if (element.classList.contains('text-blue-400') || element.classList.contains('text-blue-500')) {
+        element.style.color = '#1e40af' // Darker blue for better print contrast
+      }
+      
+      if (element.classList.contains('text-emerald-400')) {
+        element.style.color = '#065f46'
+      }
+    })
+
     document.body.appendChild(clone)
-    clone.style.position = 'absolute'
-    clone.style.left = '-9999px'
-    clone.style.top = '-9999px'
+
+    // Wait for images and layout
+    await new Promise(resolve => setTimeout(resolve, 800))
 
     const canvas = await html2canvas(clone, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
-      logging: false
+      logging: false,
+      windowWidth: 800,
+      scrollY: -window.scrollY
     })
     
     document.body.removeChild(clone)
 
     const imgData = canvas.toDataURL('image/png')
     const pdf = new jsPDF('p', 'mm', 'a4')
-    const imgProps = pdf.getImageProperties(imgData)
-    const pdfWidth = pdf.internal.pageSize.getWidth()
-    const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width
     
-    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
-    pdf.save(`Payslip-${selectedPayslip.value.id}.pdf`)
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = pdf.internal.pageSize.getHeight()
+    
+    // Calculate dimensions to fit A4 with margins
+    const margin = 10
+    const imgWidth = pdfWidth - (margin * 2)
+    const imgHeight = (canvas.height * imgWidth) / canvas.width
+    
+    // If the image is too long for one page, it will be scaled down to fit
+    // but usually a payslip is a single page.
+    let finalImgHeight = imgHeight
+    let finalYPos = margin
+
+    if (imgHeight > (pdfHeight - margin * 2)) {
+      finalImgHeight = pdfHeight - margin * 2
+    } else {
+      // Center vertically
+      finalYPos = (pdfHeight - imgHeight) / 2
+    }
+    
+    pdf.addImage(imgData, 'PNG', margin, finalYPos, imgWidth, finalImgHeight)
+    
+    // Add a very subtle page border in PDF too
+    pdf.setDrawColor(226, 232, 240)
+    pdf.rect(margin/2, margin/2, pdfWidth - margin, pdfHeight - margin)
+
+    pdf.save(`Official-Payslip-${selectedPayslip.value.payroll_no || selectedPayslip.value.id}.pdf`)
   } catch (error) {
     console.error('Error generating PDF:', error)
+    alert('Could not generate PDF. Please try again.')
   } finally {
     isDownloading.value = false
   }
-}
-
-const getTotalEarnings = (payslip: any) => {
-  return payslip.details.earnings.reduce((sum: number, e: any) => sum + e.amount, 0)
-}
-
-const getTotalDeductions = (payslip: any) => {
-  return payslip.details.deductions.reduce((sum: number, d: any) => sum + d.amount, 0)
 }
 </script>
 
@@ -400,17 +513,22 @@ const getTotalDeductions = (payslip: any) => {
                   <div class="space-y-1">
                     <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Employee Name</p>
                     <p class="text-base font-bold text-white">{{ authStore.profile?.full_name }}</p>
-                    <p class="text-xs text-slate-400">
-                      {{ authStore.profile?.job_position || 'Staff' }} 
-                      {{ authStore.profile?.department_name ? `• ${authStore.profile?.department_name}` : '' }}
-                    </p>
                   </div>
                 </div>
                 <div class="text-right space-y-4">
                   <div class="bg-blue-500/10 border border-blue-500/20 p-4 rounded-2xl inline-block text-left">
                     <p class="text-[10px] text-blue-400 font-bold uppercase tracking-widest mb-1">Pay Period</p>
                     <p class="text-sm font-bold text-white">{{ payslip.period }}</p>
+                    <p class="text-[10px] text-slate-500 mt-1 uppercase tracking-tighter">No: {{ payslip.payroll_no }}</p>
                   </div>
+                </div>
+              </div>
+
+              <!-- Work Info -->
+              <div class="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900/30 p-4 rounded-2xl border border-slate-800/50">
+                <div v-for="info in payslip.details.info" :key="info.label">
+                  <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{{ info.label }}</p>
+                  <p class="text-xs font-bold text-slate-200">{{ info.value }}</p>
                 </div>
               </div>
 
@@ -429,8 +547,8 @@ const getTotalDeductions = (payslip: any) => {
                     </div>
                     <Separator class="bg-slate-800 my-2" />
                     <div class="flex justify-between text-sm font-black">
-                      <span class="text-white uppercase tracking-widest">Total Earnings</span>
-                      <span class="text-emerald-400">{{ formatCurrency(getTotalEarnings(payslip)) }}</span>
+                      <span class="text-white uppercase tracking-widest">Gross Income</span>
+                      <span class="text-emerald-400">{{ formatCurrency(payslip.details.totals.gross_income) }}</span>
                     </div>
                   </div>
                 </div>
@@ -449,20 +567,20 @@ const getTotalDeductions = (payslip: any) => {
                     <Separator class="bg-slate-800 my-2" />
                     <div class="flex justify-between text-sm font-black">
                       <span class="text-white uppercase tracking-widest">Total Deductions</span>
-                      <span class="text-red-400">{{ formatCurrency(getTotalDeductions(payslip)) }}</span>
+                      <span class="text-red-400">{{ formatCurrency(payslip.details.totals.total_deductions) }}</span>
                     </div>
                   </div>
                 </div>
               </div>
 
-              <!-- Net Pay Footer -->
-              <div class="bg-gradient-to-r from-blue-600 to-indigo-700 p-8 rounded-3xl flex justify-between items-center shadow-xl">
+              <!-- Professional Slate Footer -->
+              <div class="bg-slate-900 p-8 rounded-3xl flex justify-between items-center shadow-xl border border-slate-800">
                 <div>
-                  <h4 class="text-sm font-bold text-blue-100 uppercase tracking-widest mb-1">Net Take Home Pay</h4>
-                  <p class="text-[10px] text-blue-200 italic opacity-80">Final amount credited to your bank account</p>
+                  <h4 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-1">Net Take Home Pay</h4>
+                  <p class="text-[10px] text-slate-500 italic">Final amount credited to your bank account</p>
                 </div>
                 <div class="text-right">
-                  <p class="text-4xl font-black text-white tracking-tighter">{{ formatCurrency(payslip.netPay) }}</p>
+                  <p class="text-4xl font-black text-white tracking-tighter">{{ formatCurrency(selectedPayslip.net_pay) }}</p>
                 </div>
               </div>
               

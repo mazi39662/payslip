@@ -6,8 +6,11 @@ export const useAuthStore = defineStore('auth', () => {
   const user = ref<any>(null)
   const profile = ref<any>(null)
   const loading = ref(false)
+  const isInitialized = ref(false)
 
   async function init() {
+    if (isInitialized.value) return
+    
     loading.value = true
     try {
       const { data: { session } } = await supabase.auth.getSession()
@@ -16,15 +19,21 @@ export const useAuthStore = defineStore('auth', () => {
         await fetchProfile()
       }
 
-      supabase.auth.onAuthStateChange(async (_event, session) => {
-        console.log('Auth state changed:', _event, session?.user?.id)
-        user.value = session?.user ?? null
-        if (user.value) {
-          await fetchProfile()
-        } else {
-          profile.value = null
+      supabase.auth.onAuthStateChange(async (event, session) => {
+        console.log('Auth state change event:', event)
+        const newUser = session?.user ?? null
+        
+        // Only update if the user actually changed to avoid redundant profile fetches
+        if (newUser?.id !== user.value?.id || event === 'SIGNED_IN' || event === 'SIGNED_OUT') {
+          user.value = newUser
+          if (user.value) {
+            await fetchProfile()
+          } else {
+            profile.value = null
+          }
         }
       })
+      isInitialized.value = true
     } catch (error) {
       console.error('Error initializing auth:', error)
     } finally {
@@ -34,7 +43,11 @@ export const useAuthStore = defineStore('auth', () => {
 
   async function fetchProfile() {
     if (!user.value) return
-    loading.value = true
+    
+    // Don't show global loading if we already have a profile (Stale-While-Revalidate)
+    const isFirstLoad = !profile.value
+    if (isFirstLoad) loading.value = true
+    
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -51,7 +64,7 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (error) {
       console.error('Unexpected error fetching profile:', error)
     } finally {
-      loading.value = false
+      if (isFirstLoad) loading.value = false
     }
   }
 
