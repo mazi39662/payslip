@@ -112,7 +112,7 @@ async function fetchPayslips() {
           { label: 'Payroll No', value: p.payroll_no },
           { label: 'Branch', value: p.branch },
           { label: 'Days Worked', value: p.days_worked },
-          { label: 'Daily Rate', value: formatCurrency(Number(p.daily_rate)) },
+          { label: 'Daily Rate', amount: Number(p.daily_rate) },
         ],
         earnings: [
           { label: 'Basic Salary', amount: Number(p.basic_salary) },
@@ -131,7 +131,10 @@ async function fetchPayslips() {
           gross_income: Number(p.gross_income),
           total_deductions: Number(p.total_deductions),
           net_pay: Number(p.net_pay)
-        }
+        },
+        company_name: p.company_name,
+        company_address: p.company_address,
+        company_logo: p.company_logo
       }
     }))
 
@@ -284,10 +287,12 @@ const downloadPDF = async () => {
         return;
       }
 
-      // Default print styles
-      element.style.backgroundColor = 'transparent'
-      element.style.color = '#000000'
-      element.style.boxShadow = 'none' // Remove UI shadows for print
+      // Default print styles (Only if NOT inside the dark banner)
+      if (!element.closest('.bg-slate-900')) {
+        element.style.backgroundColor = 'transparent'
+        element.style.color = '#000000'
+        element.style.boxShadow = 'none' // Remove UI shadows for print
+      }
       
       // Add subtle borders to data sections for structure
       if (element.classList.contains('bg-slate-900') || element.classList.contains('bg-slate-950') || element.classList.contains('border-slate-800')) {
@@ -296,21 +301,24 @@ const downloadPDF = async () => {
         element.style.borderRadius = '4px'
       }
 
-      if (element.classList.contains('text-slate-400') || element.classList.contains('text-slate-500')) {
-        element.style.color = '#475569'
-        element.style.fontWeight = '600'
-      }
-      
-      if (element.classList.contains('text-white')) {
-        element.style.color = '#000000'
-      }
-      
-      if (element.classList.contains('text-blue-400') || element.classList.contains('text-blue-500')) {
-        element.style.color = '#1e40af' // Darker blue for better print contrast
-      }
-      
-      if (element.classList.contains('text-emerald-400')) {
-        element.style.color = '#065f46'
+      // Color overrides for white-background sections only
+      if (!element.closest('.bg-slate-900')) {
+        if (element.classList.contains('text-slate-400') || element.classList.contains('text-slate-500')) {
+          element.style.color = '#475569'
+          element.style.fontWeight = '600'
+        }
+        
+        if (element.classList.contains('text-white')) {
+          element.style.color = '#000000'
+        }
+        
+        if (element.classList.contains('text-blue-400') || element.classList.contains('text-blue-500')) {
+          element.style.color = '#1e40af' 
+        }
+        
+        if (element.classList.contains('text-emerald-400')) {
+          element.style.color = '#065f46'
+        }
       }
     })
 
@@ -504,10 +512,10 @@ const downloadPDF = async () => {
               <div class="flex justify-between items-start">
                 <div class="space-y-4 text-left">
                   <div class="flex items-center gap-4">
-                    <img v-if="companyInfo.logo_url" :src="companyInfo.logo_url" class="h-12 w-auto object-contain" alt="Logo" />
+                    <img v-if="payslip.company_logo || companyInfo.logo_url" :src="payslip.company_logo || companyInfo.logo_url" class="h-12 w-auto object-contain" alt="Logo" />
                     <div>
-                      <h3 class="text-lg font-black text-white uppercase tracking-tighter">{{ companyInfo.name }}</h3>
-                      <p class="text-xs text-slate-500">{{ companyInfo.address }}</p>
+                      <h3 class="text-lg font-black text-white uppercase tracking-tighter">{{ payslip.company_name || companyInfo.name }}</h3>
+                      <p class="text-xs text-slate-500">{{ payslip.company_address || companyInfo.address }}</p>
                     </div>
                   </div>
                   <div class="space-y-1">
@@ -528,7 +536,9 @@ const downloadPDF = async () => {
               <div class="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-900/30 p-4 rounded-2xl border border-slate-800/50">
                 <div v-for="info in payslip.details.info" :key="info.label">
                   <p class="text-[9px] text-slate-500 font-bold uppercase tracking-widest">{{ info.label }}</p>
-                  <p class="text-xs font-bold text-slate-200">{{ info.value }}</p>
+                  <p class="text-xs font-bold text-slate-200">
+                    {{ info.amount !== undefined ? formatCurrency(info.amount) : info.value }}
+                  </p>
                 </div>
               </div>
 
@@ -580,7 +590,7 @@ const downloadPDF = async () => {
                   <p class="text-[10px] text-slate-500 italic">Final amount credited to your bank account</p>
                 </div>
                 <div class="text-right">
-                  <p class="text-4xl font-black text-white tracking-tighter">{{ formatCurrency(selectedPayslip.net_pay) }}</p>
+                  <p class="text-4xl font-black text-white tracking-tighter">{{ formatCurrency(payslip.netPay) }}</p>
                 </div>
               </div>
               

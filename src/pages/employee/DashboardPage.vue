@@ -144,6 +144,27 @@ const projection = computed(() => {
   return (yearToDate.value / paidMonths) * 12
 })
 
+const nextPayrollDate = computed(() => {
+  const now = new Date()
+  // Last day of current month
+  return new Date(now.getFullYear(), now.getMonth() + 1, 0)
+})
+
+const formattedPayrollDate = computed(() => {
+  return nextPayrollDate.value.toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric'
+  })
+})
+
+const daysUntilPayroll = computed(() => {
+  const now = new Date()
+  const diffTime = nextPayrollDate.value.getTime() - now.getTime()
+  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+  return diffDays > 0 ? diffDays : 0
+})
+
 </script>
 
 <template>
@@ -326,9 +347,9 @@ const projection = computed(() => {
           </div>
           <div>
             <p class="text-slate-500 text-sm font-bold uppercase tracking-[0.2em]">Upcoming Payroll</p>
-            <h2 class="text-white text-3xl md:text-4xl font-black tracking-tight mt-1">May 31, 2024</h2>
+            <h2 class="text-white text-3xl md:text-4xl font-black tracking-tight mt-1">{{ formattedPayrollDate }}</h2>
             <div class="flex items-center gap-2 mt-2">
-              <span class="text-xs bg-blue-500/10 px-3 py-1 rounded-full text-blue-400 font-bold uppercase tracking-widest border border-blue-500/20">24 Days Remaining</span>
+              <span class="text-xs bg-blue-500/10 px-3 py-1 rounded-full text-blue-400 font-bold uppercase tracking-widest border border-blue-500/20">{{ daysUntilPayroll }} Days Remaining</span>
             </div>
           </div>
         </div>

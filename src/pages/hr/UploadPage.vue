@@ -46,6 +46,9 @@ interface ProcessedPayslip {
   lates: number
   total_deductions: number
   net_pay: number
+  company_name?: string
+  company_address?: string
+  company_logo?: string
   employee_id?: string
   status: 'valid' | 'invalid'
   error?: string
@@ -91,6 +94,9 @@ const excelColumns = [
   { name: 'LATES', type: 'Number' },
   { name: 'Total Deductions', type: 'Number' },
   { name: 'Net Pay', type: 'Number' },
+  { name: 'Company Name', type: 'Text (Optional)' },
+  { name: 'Company Address', type: 'Text (Optional)' },
+  { name: 'Company Logo', type: 'URL (Optional)' },
 ]
 
 const isInitialLoading = ref(true)
@@ -200,6 +206,9 @@ const processFile = async (file: File) => {
           lates: parseFloat(row['LATES'] || row.lates || row.Lates || 0),
           total_deductions: parseFloat(row['Total Deductions'] || row.total_deductions || row.TotalDeductions || 0),
           net_pay: parseFloat(row['Net Pay'] || row.net_pay || row.NetPay || 0),
+          company_name: row['Company Name'] || row.company_name || row.CompanyName || '',
+          company_address: row['Company Address'] || row.company_address || row.CompanyAddress || '',
+          company_logo: row['Company Logo'] || row.company_logo || row.CompanyLogo || '',
           employee_id: emp?.id,
           status: emp ? 'valid' : 'invalid',
           error: emp ? undefined : 'Employee No not found'
@@ -260,6 +269,9 @@ const handleUpload = async () => {
         lates: d.lates,
         total_deductions: d.total_deductions,
         net_pay: d.net_pay,
+        company_name: d.company_name,
+        company_address: d.company_address,
+        company_logo: d.company_logo,
         upload_id: historyRecord.id
       }))
 
